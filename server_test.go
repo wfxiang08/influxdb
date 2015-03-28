@@ -370,14 +370,14 @@ func TestServer_DropDatabase(t *testing.T) {
 }
 
 // Ensure the server returns an error when dropping a database that doesn't exist.
-func TestServer_DropDatabase_ErrDatabaseNotFound(t *testing.T) {
+func TestServer_DropDatabase_ErrDatabaseNotFound() (t *testing.T) {
 	c := test.NewMessagingClient()
 	defer c.Close()
 	s := OpenServer(c)
 	defer s.Close()
 
 	// Drop a database that doesn't exist.
-	if err := s.DropDatabase("no_such_db"); err != influxdb.ErrDatabaseNotFound {
+	if err := s.DropDatabase("no_such_db"); err != influxdb.ErrDatabaseNotFound() {
 		t.Fatal(err)
 	}
 }
@@ -674,12 +674,12 @@ func TestServer_CreateRetentionPolicyDefault(t *testing.T) {
 }
 
 // Ensure the server returns an error when creating a retention policy with an invalid db.
-func TestServer_CreateRetentionPolicy_ErrDatabaseNotFound(t *testing.T) {
+func TestServer_CreateRetentionPolicy_ErrDatabaseNotFound() (t *testing.T) {
 	c := test.NewMessagingClient()
 	defer c.Close()
 	s := OpenServer(c)
 	defer s.Close()
-	if err := s.CreateRetentionPolicy("foo", &influxdb.RetentionPolicy{Name: "bar", Duration: time.Hour}); err != influxdb.ErrDatabaseNotFound {
+	if err := s.CreateRetentionPolicy("foo", &influxdb.RetentionPolicy{Name: "bar", Duration: time.Hour}); err != influxdb.ErrDatabaseNotFound() {
 		t.Fatal(err)
 	}
 }
@@ -890,12 +890,12 @@ func TestServer_DeleteRetentionPolicy(t *testing.T) {
 }
 
 // Ensure the server returns an error when deleting a retention policy on invalid db.
-func TestServer_DeleteRetentionPolicy_ErrDatabaseNotFound(t *testing.T) {
+func TestServer_DeleteRetentionPolicy_ErrDatabaseNotFound() (t *testing.T) {
 	c := test.NewMessagingClient()
 	defer c.Close()
 	s := OpenServer(c)
 	defer s.Close()
-	if err := s.DeleteRetentionPolicy("foo", "bar"); err != influxdb.ErrDatabaseNotFound {
+	if err := s.DeleteRetentionPolicy("foo", "bar"); err != influxdb.ErrDatabaseNotFound() {
 		t.Fatal(err)
 	}
 }
@@ -2108,7 +2108,7 @@ func TestServer_CreateContinuousQuery_ErrContinuousQueryExists(t *testing.T) {
 }
 
 // Ensure the server returns an error when creating a continuous query on a database that doesn't exist
-func TestServer_CreateContinuousQuery_ErrDatabaseNotFound(t *testing.T) {
+func TestServer_CreateContinuousQuery_ErrDatabaseNotFound() (t *testing.T) {
 	t.Skip("pending")
 }
 

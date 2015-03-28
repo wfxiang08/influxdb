@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -329,16 +330,52 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			query:    `SELECT abc FROM "%DB%"."%RP%".cpu WHERE time < now()`,
 			expected: `{"results":[{"error":"unknown field or tag name in select clause: abc"}]}`,
 		},
-		// FROM /regex/
+		// FROM regex tests
 		{
 			reset: true,
-			name:  "FROM regex",
+			name:  "FROM regex using default db and rp",
 			write: `{"database" : "%DB%", "retentionPolicy" : "%RP%", "points": [
 				{"name": "cpu1", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 10}},
 				{"name": "cpu2", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 20}},
 				{"name": "cpu3", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 30}}
 			]}`,
 			query:    `SELECT * FROM /cpu[13]/`,
+			queryDb:  "%DB%",
+			expected: `{"results":[{"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		{
+			reset: true,
+			name:  `FROM regex specifying db and rp`,
+			write: `{"database" : "%DB%", "retentionPolicy" : "%RP%", "points": [
+				{"name": "cpu1", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 10}},
+				{"name": "cpu2", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 20}},
+				{"name": "cpu3", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 30}}
+			]}`,
+			query:    `SELECT * FROM "%DB%"."%RP%"./cpu[13]/`,
+			queryDb:  "%DB%",
+			expected: `{"results":[{"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		{
+			reset: true,
+			name:  `FROM regex using specified db and default rp`,
+			write: `{"database" : "%DB%", "retentionPolicy" : "%RP%", "points": [
+				{"name": "cpu1", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 10}},
+				{"name": "cpu2", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 20}},
+				{"name": "cpu3", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 30}}
+			]}`,
+			query:    `SELECT * FROM "%DB%"../cpu[13]/`,
+			queryDb:  "%DB%",
+			expected: `{"results":[{"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		{
+			reset: true,
+			name:  `FROM regex using default db and specified rp`,
+			write: `{"database" : "%DB%", "retentionPolicy" : "%RP%", "points": [
+				{"name": "cpu1", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 10}},
+				{"name": "cpu2", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 20}},
+				{"name": "cpu3", "timestamp": "2015-02-28T01:03:36.703820946Z", "tags": {"host": "server01"}, "fields": {"value": 30}}
+			]}`,
+			query:    `SELECT * FROM "%RP%"./cpu[13]/`,
 			queryDb:  "%DB%",
 			expected: `{"results":[{"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
 		},
@@ -783,13 +820,21 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 		// Continuous query control.
 		{
 			name:     "create continuous query",
-			query:    `CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count() INTO measure1 FROM myseries GROUP BY time(10m) END`,
+			reset:    true,
+			query:    `CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count(value) INTO measure1 FROM myseries GROUP BY time(10m) END`,
 			expected: `{"results":[{}]}`,
 		},
 		{
 			query:    `SHOW CONTINUOUS QUERIES`,
 			expected: `{"results":[{"series":[{"name":"%DB%","columns":["name","query"],"values":[["myquery","CREATE CONTINUOUS QUERY myquery ON %DB% BEGIN SELECT count() INTO measure1 FROM myseries GROUP BY time(10m) END"]]}]}]}`,
 		},
+	}
+
+	// Get env var to filter which tests we run.
+	var filter *regexp.Regexp
+	if pattern := os.Getenv("INFLUXDB_TEST_RUN"); pattern != "" {
+		fmt.Printf("pattern = %#v\n", pattern)
+		filter = regexp.MustCompile(pattern)
 	}
 
 	for i, tt := range tests {
@@ -811,6 +856,13 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 		if name == "" {
 			name = tt.query
 		}
+
+		// If a regex pattern was specified through the INFLUXDB_TEST_RUN env var, filter by that.
+		if filter != nil && !filter.MatchString(tt.query) {
+			fmt.Println(`skipped: ` + name)
+			continue
+		}
+
 		fmt.Printf("TEST: %d: %s\n", i, name)
 		t.Logf("Running test %d: %s", i, name)
 
@@ -830,9 +882,10 @@ func runTestsData(t *testing.T, testName string, nodes Cluster, database, retent
 			if tt.queryDb != "" {
 				urlDb = tt.queryDb
 			}
-			got, ok := queryAndWait(t, nodes, rewriteDbRp(urlDb, database, retention), rewriteDbRp(tt.query, database, retention), rewriteDbRp(tt.expected, database, retention), 3*time.Second)
+			qry := rewriteDbRp(tt.query, database, retention)
+			got, ok := queryAndWait(t, nodes, rewriteDbRp(urlDb, database, retention), qry, rewriteDbRp(tt.expected, database, retention), 1*time.Second)
 			if !ok {
-				t.Errorf("Test #%d: \"%s\" failed\n  exp: %s\n  got: %s\n", i, name, rewriteDbRp(tt.expected, database, retention), got)
+				t.Errorf("Test #%d: \"%s\" failed\n  query: %s\n  exp: %s\n  got: %s\n", i, name, qry, rewriteDbRp(tt.expected, database, retention), got)
 			}
 		}
 	}

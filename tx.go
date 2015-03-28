@@ -36,31 +36,28 @@ func (tx *tx) SetNow(now time.Time) { tx.now = now }
 func (tx *tx) CreateMapReduceJobs(stmt *influxql.SelectStatement, tagKeys []string) ([]*influxql.MapReduceJob, error) {
 	jobs := []*influxql.MapReduceJob{}
 	for _, src := range stmt.Sources {
-		measurementName := src.(*influxql.Measurement).Name
-
-		// Parse the source segments.
-		database, policyName, measurement, err := splitIdent(measurementName)
-		if err != nil {
-			return nil, err
+		mm, ok := src.(*influxql.Measurement)
+		if !ok {
+			return nil, fmt.Errorf("invalid source type: %#v", src)
 		}
-
+		fmt.Printf("stmt.Sources.String() = %#v\n", stmt.Sources.String())
 		// Find database and retention policy.
-		db := tx.server.databases[database]
+		db := tx.server.databases[mm.Database]
 		if db == nil {
-			return nil, ErrDatabaseNotFound
+			return nil, ErrDatabaseNotFound(mm.Database)
 		}
-		rp := db.policies[policyName]
+		rp := db.policies[mm.RetentionPolicy]
 		if rp == nil {
 			return nil, ErrRetentionPolicyNotFound
 		}
 
 		// Find measurement.
-		m, err := tx.server.measurement(database, measurement)
+		m, err := tx.server.measurement(mm.Database, mm.Name)
 		if err != nil {
 			return nil, err
 		}
 		if m == nil {
-			return nil, ErrMeasurementNotFound
+			return nil, ErrMeasurementNotFound(influxql.QuoteIdent([]string{mm.Database, "", mm.Name}...))
 		}
 
 		tx.measurement = m

@@ -850,7 +850,7 @@ func (s *Server) applyDropDatabase(m *messaging.Message) (err error) {
 	mustUnmarshalJSON(m.Data, &c)
 
 	if s.databases[c.Name] == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Name)
 	}
 
 	// Remove from metastore.
@@ -872,7 +872,7 @@ func (s *Server) Shard(id uint64) *Shard {
 func (s *Server) shardGroupByTimestamp(database, policy string, timestamp time.Time) (*ShardGroup, error) {
 	db := s.databases[database]
 	if db == nil {
-		return nil, ErrDatabaseNotFound
+		return nil, ErrDatabaseNotFound(database)
 	}
 	return db.shardGroupByTimestamp(policy, timestamp)
 }
@@ -886,7 +886,7 @@ func (s *Server) ShardGroups(database string) ([]*ShardGroup, error) {
 	// Lookup database.
 	db := s.databases[database]
 	if db == nil {
-		return nil, ErrDatabaseNotFound
+		return nil, ErrDatabaseNotFound(database)
 	}
 
 	// Retrieve groups from database.
@@ -913,7 +913,7 @@ func (s *Server) applyCreateShardGroupIfNotExists(m *messaging.Message) (err err
 	// Retrieve database.
 	db := s.databases[c.Database]
 	if s.databases[c.Database] == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	}
 
 	// Validate retention policy.
@@ -1025,7 +1025,7 @@ func (s *Server) applyDeleteShardGroup(m *messaging.Message) (err error) {
 	// Retrieve database.
 	db := s.databases[c.Database]
 	if s.databases[c.Database] == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	}
 
 	// Validate retention policy.
@@ -1270,7 +1270,7 @@ func (s *Server) RetentionPolicy(database, name string) (*RetentionPolicy, error
 	// Lookup database.
 	db := s.databases[database]
 	if db == nil {
-		return nil, ErrDatabaseNotFound
+		return nil, ErrDatabaseNotFound(database)
 	}
 
 	return db.policies[name], nil
@@ -1285,7 +1285,7 @@ func (s *Server) DefaultRetentionPolicy(database string) (*RetentionPolicy, erro
 	// Lookup database.
 	db := s.databases[database]
 	if db == nil {
-		return nil, ErrDatabaseNotFound
+		return nil, ErrDatabaseNotFound(database)
 	}
 
 	return db.policies[db.defaultRetentionPolicy], nil
@@ -1300,7 +1300,7 @@ func (s *Server) RetentionPolicies(database string) ([]*RetentionPolicy, error) 
 	// Lookup database.
 	db := s.databases[database]
 	if db == nil {
-		return nil, ErrDatabaseNotFound
+		return nil, ErrDatabaseNotFound(database)
 	}
 
 	// Retrieve the policies.
@@ -1371,7 +1371,7 @@ func (s *Server) applyCreateRetentionPolicy(m *messaging.Message) error {
 	// Retrieve the database.
 	db := s.databases[c.Database]
 	if s.databases[c.Database] == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	} else if c.Name == "" {
 		return ErrRetentionPolicyNameRequired
 	} else if db.policies[c.Name] != nil {
@@ -1421,7 +1421,7 @@ func (s *Server) applyUpdateRetentionPolicy(m *messaging.Message) (err error) {
 	// Validate command.
 	db := s.databases[c.Database]
 	if s.databases[c.Database] == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	} else if c.Name == "" {
 		return ErrRetentionPolicyNameRequired
 	}
@@ -1471,7 +1471,7 @@ func (s *Server) applyDeleteRetentionPolicy(m *messaging.Message) (err error) {
 	// Retrieve the database.
 	db := s.databases[c.Database]
 	if s.databases[c.Database] == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	} else if c.Name == "" {
 		return ErrRetentionPolicyNameRequired
 	} else if db.policies[c.Name] == nil {
@@ -1503,7 +1503,7 @@ func (s *Server) applySetDefaultRetentionPolicy(m *messaging.Message) (err error
 	// Validate command.
 	db := s.databases[c.Database]
 	if s.databases[c.Database] == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	} else if db.policies[c.Name] == nil {
 		return ErrRetentionPolicyNotFound
 	}
@@ -1525,7 +1525,7 @@ func (s *Server) applyDropSeries(m *messaging.Message) error {
 
 	database := s.databases[c.Database]
 	if database == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	}
 
 	// Remove from metastore.
@@ -1622,7 +1622,7 @@ func (s *Server) WriteSeries(database, retentionPolicy string, points []Point) (
 
 		db := s.databases[database]
 		if db == nil {
-			return ErrDatabaseNotFound
+			return ErrDatabaseNotFound(database)
 		}
 		for _, p := range points {
 			measurement, series := db.MeasurementAndSeries(p.Name, p.Tags)
@@ -1713,7 +1713,7 @@ func (s *Server) createMeasurementsIfNotExists(database, retentionPolicy string,
 
 		db := s.databases[database]
 		if db == nil {
-			return fmt.Errorf("database not found %q", database)
+			return ErrDatabaseNotFound(database)
 		}
 
 		for _, p := range points {
@@ -1763,7 +1763,7 @@ func (s *Server) applyCreateMeasurementsIfNotExists(m *messaging.Message) error 
 	// Validate command.
 	db := s.databases[c.Database]
 	if db == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	}
 
 	// Process command within a transaction.
@@ -1830,12 +1830,12 @@ func (s *Server) applyDropMeasurement(m *messaging.Message) error {
 
 	database := s.databases[c.Database]
 	if database == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(c.Database)
 	}
 
 	measurement := database.measurements[c.Name]
 	if measurement == nil {
-		return ErrMeasurementNotFound
+		return ErrMeasurementNotFound(c.Name)
 	}
 
 	err := s.meta.mustUpdate(m.Index, func(tx *metatx) error {
@@ -1884,13 +1884,13 @@ func (s *Server) ReadSeries(database, retentionPolicy, name string, tags map[str
 	// Find database.
 	db := s.databases[database]
 	if db == nil {
-		return nil, ErrDatabaseNotFound
+		return nil, ErrDatabaseNotFound(database)
 	}
 
 	// Find series.
 	mm, series := db.MeasurementAndSeries(name, tags)
 	if mm == nil {
-		return nil, ErrMeasurementNotFound
+		return nil, ErrMeasurementNotFound("")
 	} else if series == nil {
 		return nil, ErrSeriesNotFound
 	}
@@ -1961,10 +1961,22 @@ func (s *Server) ExecuteQuery(q *influxql.Query, database string, user *User) Re
 
 	// Execute each statement.
 	for i, stmt := range q.Statements {
-		// Set default database and policy on the statement.
-		if err := s.NormalizeStatement(stmt, database); err != nil {
-			results.Results[i] = &Result{Err: err}
-			break
+		// If a default database wasn't passed in by the caller,
+		// try to get it from the statement.
+		defaultDB := database
+		if defaultDB == "" {
+			if s, ok := stmt.(influxql.HasDefaultDB); ok {
+				defaultDB = s.DefaultDB()
+			}
+
+		}
+
+		// If we have a default database, normalize the statement with it.
+		if defaultDB != "" {
+			if err := s.NormalizeStatement(stmt, defaultDB); err != nil {
+				results.Results[i] = &Result{Err: err}
+				break
+			}
 		}
 
 		var res *Result
@@ -2084,6 +2096,7 @@ func (s *Server) rewriteSelectStatement(stmt *influxql.SelectStatement) (*influx
 		return nil, err
 	}
 	stmt.Sources = sources
+	fmt.Printf("sources = %#v\n", sources.String())
 
 	// Expand wildcards in the fields or GROUP BY.
 	if stmt.HasWildcard() {
@@ -2113,18 +2126,17 @@ func (s *Server) expandWildcards(stmt *influxql.SelectStatement) (*influxql.Sele
 
 	// Iterate measurements in the FROM clause getting the fields & dimensions for each.
 	for _, src := range stmt.Sources {
-		if measurement, ok := src.(*influxql.Measurement); ok {
-			// Split the measurement name into its pieces (db, rp, & measurement).
-			segments, err := influxql.SplitIdent(measurement.Name)
-			if err != nil {
-				return nil, fmt.Errorf("unable to parse measurement %s", measurement.Name)
+		if m, ok := src.(*influxql.Measurement); ok {
+			// Lookup the database.
+			db, ok := s.databases[m.Database]
+			if !ok {
+				return nil, ErrDatabaseNotFound(m.Database)
 			}
-			db, m := segments[0], segments[2]
 
 			// Lookup the measurement in the database.
-			mm := s.databases[db].measurements[m]
+			mm := db.measurements[strings.Trim(m.Name, `"`)]
 			if mm == nil {
-				return nil, fmt.Errorf("measurement not found: %s", measurement.Name)
+				return nil, ErrMeasurementNotFound(m.Name)
 			}
 
 			// Get the fields for this measurement.
@@ -2156,6 +2168,7 @@ func (s *Server) expandSources(sources influxql.Sources) (influxql.Sources, erro
 	// Use a map as a set to prevent duplicates. Two regexes might produce
 	// duplicates when expanded.
 	set := map[string]influxql.Source{}
+	names := []string{}
 
 	// Iterate all sources, expanding regexes when they're found.
 	for _, source := range sources {
@@ -2166,16 +2179,10 @@ func (s *Server) expandSources(sources influxql.Sources) (influxql.Sources, erro
 				continue
 			}
 
-			// Split out the database & retention policy names.
-			segments, err := influxql.SplitIdent(src.Name)
-			if err != nil {
-				return nil, err
-			}
-
 			// Lookup the database.
-			db := s.databases[segments[0]]
+			db := s.databases[src.Database]
 			if db == nil {
-				return nil, ErrDatabaseNotFound
+				return nil, ErrDatabaseNotFound(src.Database)
 			}
 
 			// Get measurements from the database that match the regex.
@@ -2183,8 +2190,17 @@ func (s *Server) expandSources(sources influxql.Sources) (influxql.Sources, erro
 
 			// Add those measurments to the set.
 			for _, m := range measurements {
-				name := strings.Join([]string{src.Name, influxql.QuoteIdent([]string{m.Name})}, ".")
-				set[name] = &influxql.Measurement{Name: name}
+				m2 := &influxql.Measurement{
+					Database:        src.Database,
+					RetentionPolicy: src.RetentionPolicy,
+					Name:            m.Name,
+				}
+
+				name := m2.String()
+				if _, ok := set[name]; !ok {
+					set[name] = m2
+					names = append(names, name)
+				}
 			}
 
 		default:
@@ -2192,10 +2208,13 @@ func (s *Server) expandSources(sources influxql.Sources) (influxql.Sources, erro
 		}
 	}
 
+	// Sort the list of source names.
+	sort.Strings(names)
+
 	// Convert set to a list of Sources.
 	expanded := make(influxql.Sources, 0, len(set))
-	for _, src := range set {
-		expanded = append(expanded, src)
+	for _, name := range names {
+		expanded = append(expanded, set[name])
 	}
 
 	return expanded, nil
@@ -2276,7 +2295,7 @@ func (s *Server) executeDropSeriesStatement(stmt *influxql.DropSeriesStatement, 
 	db := s.databases[database]
 	if db == nil {
 		s.mu.RUnlock()
-		return &Result{Err: ErrDatabaseNotFound}
+		return &Result{Err: ErrDatabaseNotFound(database)}
 	}
 
 	// Get the list of measurements we're interested in.
@@ -2313,7 +2332,7 @@ func (s *Server) executeShowSeriesStatement(stmt *influxql.ShowSeriesStatement, 
 	// Find the database.
 	db := s.databases[database]
 	if db == nil {
-		return &Result{Err: ErrDatabaseNotFound}
+		return &Result{Err: ErrDatabaseNotFound(database)}
 	}
 
 	// Get the list of measurements we're interested in.
@@ -2416,7 +2435,7 @@ func (s *Server) executeShowMeasurementsStatement(stmt *influxql.ShowMeasurement
 	// Find the database.
 	db := s.databases[database]
 	if db == nil {
-		return &Result{Err: ErrDatabaseNotFound}
+		return &Result{Err: ErrDatabaseNotFound(database)}
 	}
 
 	var measurements Measurements
@@ -2478,7 +2497,7 @@ func (s *Server) executeShowTagKeysStatement(stmt *influxql.ShowTagKeysStatement
 	// Find the database.
 	db := s.databases[database]
 	if db == nil {
-		return &Result{Err: ErrDatabaseNotFound}
+		return &Result{Err: ErrDatabaseNotFound(database)}
 	}
 
 	// Get the list of measurements we're interested in.
@@ -2528,7 +2547,7 @@ func (s *Server) executeShowTagValuesStatement(stmt *influxql.ShowTagValuesState
 	// Find the database.
 	db := s.databases[database]
 	if db == nil {
-		return &Result{Err: ErrDatabaseNotFound}
+		return &Result{Err: ErrDatabaseNotFound(database)}
 	}
 
 	// Get the list of measurements we're interested in.
@@ -2643,7 +2662,7 @@ func (s *Server) executeShowFieldKeysStatement(stmt *influxql.ShowFieldKeysState
 	// Find the database.
 	db := s.databases[database]
 	if db == nil {
-		return &Result{Err: ErrDatabaseNotFound}
+		return &Result{Err: ErrDatabaseNotFound(database)}
 	}
 
 	// Get the list of measurements we're interested in.
@@ -2850,7 +2869,7 @@ func (s *Server) MeasurementNames(database string) []string {
 func (s *Server) measurement(database, name string) (*Measurement, error) {
 	db := s.databases[database]
 	if db == nil {
-		return nil, ErrDatabaseNotFound
+		return nil, ErrDatabaseNotFound(database)
 	}
 
 	return db.measurements[name], nil
@@ -2877,14 +2896,12 @@ func (s *Server) normalizeStatement(stmt influxql.Statement, defaultDatabase str
 		}
 		switch n := n.(type) {
 		case *influxql.Measurement:
-			nm, e := s.normalizeMeasurement(n, defaultDatabase)
+			e := s.normalizeMeasurement(n, defaultDatabase)
 			if e != nil {
 				err = e
 				return
 			}
-			prefixes[n.Name] = nm.Name
-			n.Name = nm.Name
-			n.Regex = nm.Regex
+			prefixes[n.Name] = n.Name
 		}
 	})
 	if err != nil {
@@ -2897,7 +2914,7 @@ func (s *Server) normalizeStatement(stmt influxql.Statement, defaultDatabase str
 		case *influxql.VarRef:
 			for k, v := range prefixes {
 				if strings.HasPrefix(n.Val, k+".") {
-					n.Val = v + "." + influxql.QuoteIdent([]string{n.Val[len(k)+1:]})
+					n.Val = v + "." + influxql.QuoteIdent(n.Val[len(k)+1:])
 				}
 			}
 		}
@@ -2907,79 +2924,44 @@ func (s *Server) normalizeStatement(stmt influxql.Statement, defaultDatabase str
 }
 
 // NormalizeMeasurement inserts the default database or policy into all measurement names.
-func (s *Server) NormalizeMeasurement(m *influxql.Measurement, defaultDatabase string) (*influxql.Measurement, error) {
+func (s *Server) NormalizeMeasurement(m *influxql.Measurement, defaultDatabase string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.normalizeMeasurement(m, defaultDatabase)
 }
 
-func (s *Server) normalizeMeasurement(m *influxql.Measurement, defaultDatabase string) (*influxql.Measurement, error) {
+func (s *Server) normalizeMeasurement(m *influxql.Measurement, defaultDatabase string) error {
+	if defaultDatabase == "" {
+		panic("")
+	}
 	if m.Name == "" && m.Regex == nil {
-		return nil, errors.New("invalid measurement")
+		return errors.New("invalid measurement")
 	}
 
-	var segments []string
-	var err error
-
-	if m.Name != "" {
-		// Split measurement name into segments.
-		segments, err = influxql.SplitIdent(m.Name)
-		if err != nil {
-			return nil, fmt.Errorf("invalid measurement: %s", m.Name)
-		}
-	}
-
-	// Number of segments.
-	n := 3
-
-	// If there's a regex, add a placeholder segment
-	if m.Regex != nil {
-		segments = append(segments, "")
-		n = 2
-	}
-
-	// Normalize to 3 segments.
-	switch len(segments) {
-	case 1:
-		segments = append([]string{"", ""}, segments...)
-	case 2:
-		segments = append([]string{""}, segments...)
-	case 3:
-		// nop
-	default:
-		return nil, fmt.Errorf("measurement has too many segments: %s", m.String())
-	}
-
-	// Set database if unset.
-	if segments[0] == `` {
-		segments[0] = defaultDatabase
+	if m.Database == "" {
+		m.Database = defaultDatabase
 	}
 
 	// Find database.
-	db := s.databases[segments[0]]
+	db := s.databases[m.Database]
 	if db == nil {
-		return nil, fmt.Errorf("database not found: %s", segments[0])
+		return ErrDatabaseNotFound(m.Database)
 	}
 
-	// Set retention policy if unset.
-	if segments[1] == `` {
+	// If no retention policy was specified, use the default.
+	if m.RetentionPolicy == "" {
 		if db.defaultRetentionPolicy == "" {
-			return nil, fmt.Errorf("default retention policy not set for: %s", db.name)
+			return fmt.Errorf("default retention policy not set for: %s", db.name)
 		}
-		segments[1] = db.defaultRetentionPolicy
+		m.RetentionPolicy = db.defaultRetentionPolicy
 	}
 
-	// Check if retention policy exists.
-	if _, ok := db.policies[segments[1]]; !ok {
-		return nil, fmt.Errorf("retention policy does not exist: %s.%s", segments[0], segments[1])
+	// Make sure the retention policy exists.
+	if _, ok := db.policies[m.RetentionPolicy]; !ok {
+		return fmt.Errorf("retention policy does not exist: %s.%s", m.Database, m.RetentionPolicy)
 	}
 
-	nm := &influxql.Measurement{
-		Name:  influxql.QuoteIdent(segments[:n]),
-		Regex: m.Regex,
-	}
-
-	return nm, nil
+	return nil
 }
 
 // processor runs in a separate goroutine and processes all incoming broker messages.
@@ -3319,13 +3301,15 @@ func HashPassword(password string) ([]byte, error) {
 type ContinuousQuery struct {
 	Query string `json:"query"`
 
-	mu              sync.Mutex
-	cq              *influxql.CreateContinuousQueryStatement
-	lastRun         time.Time
-	intoDB          string
-	intoRP          string
-	intoMeasurement string
+	mu      sync.Mutex
+	cq      *influxql.CreateContinuousQueryStatement
+	lastRun time.Time
 }
+
+func (cq *ContinuousQuery) intoDB() string          { return cq.cq.Source.Target.Measurement.Database }
+func (cq *ContinuousQuery) intoRP() string          { return cq.cq.Source.Target.Measurement.RetentionPolicy }
+func (cq *ContinuousQuery) setIntoRP(rp string)     { cq.cq.Source.Target.Measurement.RetentionPolicy = rp }
+func (cq *ContinuousQuery) intoMeasurement() string { return cq.cq.Source.Target.Measurement.Name }
 
 // NewContinuousQuery returns a ContinuousQuery object with a parsed influxql.CreateContinuousQueryStatement
 func NewContinuousQuery(q string) (*ContinuousQuery, error) {
@@ -3344,26 +3328,6 @@ func NewContinuousQuery(q string) (*ContinuousQuery, error) {
 		cq:    cq,
 	}
 
-	// set which database and retention policy, and measuremet a CQ is writing into
-	a, err := influxql.SplitIdent(cq.Source.Target.Measurement)
-	if err != nil {
-		return nil, err
-	}
-
-	// set the default into database to the same as the from database
-	cquery.intoDB = cq.Database
-
-	if len(a) == 1 { // into only set the measurement name. keep default db and rp
-		cquery.intoMeasurement = a[0]
-	} else if len(a) == 2 { // into set the rp and the measurement
-		cquery.intoRP = a[0]
-		cquery.intoMeasurement = a[1]
-	} else { // into set db, rp, and measurement
-		cquery.intoDB = a[0]
-		cquery.intoRP = a[1]
-		cquery.intoMeasurement = a[2]
-	}
-
 	return cquery, nil
 }
 
@@ -3377,20 +3341,24 @@ func (s *Server) applyCreateContinuousQueryCommand(m *messaging.Message) error {
 		return err
 	}
 
+	fmt.Printf("cq.cq.Database = %#v\n", cq.cq.Database)
+
 	// normalize the select statement in the CQ so that it has the database and retention policy inserted
 	if err := s.normalizeStatement(cq.cq.Source, cq.cq.Database); err != nil {
 		return err
 	}
 
+	fmt.Printf("cq.cq.Source.String() = %#v\n", cq.cq.Source.String())
+
 	// ensure the into database exists
-	if s.databases[cq.intoDB] == nil {
-		return ErrDatabaseNotFound
+	if s.databases[cq.intoDB()] == nil {
+		return ErrDatabaseNotFound(cq.intoDB())
 	}
 
 	// Retrieve the database.
 	db := s.databases[cq.cq.Database]
 	if db == nil {
-		return ErrDatabaseNotFound
+		return ErrDatabaseNotFound(cq.cq.Database)
 	} else if db.continuousQueryByName(cq.cq.Name) != nil {
 		return ErrContinuousQueryExists
 	}
@@ -3416,8 +3384,8 @@ func (s *Server) RunContinuousQueries() error {
 		for _, c := range d.continuousQueries {
 			if s.shouldRunContinuousQuery(c) {
 				// set the into retention policy based on what is now the default
-				if c.intoRP == "" {
-					c.intoRP = d.defaultRetentionPolicy
+				if c.intoRP() == "" {
+					c.setIntoRP(d.defaultRetentionPolicy)
 				}
 				go func(cq *ContinuousQuery) {
 					s.runContinuousQuery(c)
@@ -3523,14 +3491,14 @@ func (s *Server) runContinuousQueryAndWriteResult(cq *ContinuousQuery) error {
 
 	// Read all rows from channel and write them in
 	for row := range ch {
-		points, err := s.convertRowToPoints(cq.intoMeasurement, row)
+		points, err := s.convertRowToPoints(cq.intoMeasurement(), row)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
 		if len(points) > 0 {
-			_, err = s.WriteSeries(cq.intoDB, cq.intoRP, points)
+			_, err = s.WriteSeries(cq.intoDB(), cq.intoRP(), points)
 			if err != nil {
 				log.Printf("[cq] err: %s", err)
 			}

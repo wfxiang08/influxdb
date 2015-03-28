@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/influxdb/influxdb/client"
@@ -41,8 +42,8 @@ var (
 	// ErrDatabaseExists is returned when creating a duplicate database.
 	ErrDatabaseExists = errors.New("database exists")
 
-	// ErrDatabaseNotFound is returned when dropping a non-existent database.
-	ErrDatabaseNotFound = errors.New("database not found")
+	// errDatabaseNotFound is returned when dropping a non-existent database.
+	errDatabaseNotFound = errors.New("database not found")
 
 	// ErrDatabaseRequired is returned when using a blank database name.
 	ErrDatabaseRequired = errors.New("database required")
@@ -100,8 +101,8 @@ var (
 	// ErrMeasurementNameRequired is returned when a point does not contain a name.
 	ErrMeasurementNameRequired = errors.New("measurement name required")
 
-	// ErrMeasurementNotFound is returned when a measurement does not exist.
-	ErrMeasurementNotFound = errors.New("measurement not found")
+	// errMeasurementNotFound is returned when a measurement does not exist.
+	errMeasurementNotFound = errors.New("measurement not found")
 
 	// ErrFieldsRequired is returned when a point does not any fields.
 	ErrFieldsRequired = errors.New("fields required")
@@ -132,6 +133,21 @@ var (
 	// ErrContinuousQueryExists is returned when creating a duplicate continuous query.
 	ErrContinuousQueryExists = errors.New("continuous query already exists")
 )
+
+func ErrDatabaseNotFound(name string) error { return Errorf("database not found: %s", name) }
+
+func ErrMeasurementNotFound(name string) error { return Errorf("measurement not found: %s", name) }
+
+func Errorf(format string, a ...interface{}) (err error) {
+	if _, file, line, ok := runtime.Caller(2); ok {
+		args := []interface{}{file, line}
+		args = append(args, a...)
+		err = fmt.Errorf("%s:%d: "+format, args...)
+	} else {
+		err = fmt.Errorf(format, a...)
+	}
+	return
+}
 
 // ErrAuthorize represents an authorization error.
 type ErrAuthorize struct {

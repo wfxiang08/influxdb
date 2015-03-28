@@ -397,6 +397,48 @@ func (p *Parser) parseIdentList() ([]string, error) {
 	}
 }
 
+// parseSegmentedIdents parses a segmented identifiers.
+// e.g.,  "db"."rp".measurement  or  "db"..measurement
+func (p *Parser) parseSegmentedIdents() ([]string, error) {
+	ident, err := p.parseIdent()
+	if err != nil {
+		return nil, err
+	}
+	idents := []string{ident}
+
+	// Parse remaining (optional) identifiers.
+	for {
+		if tok, _, _ := p.scan(); tok != DOT {
+			// No more segments so we're done.
+			p.unscan()
+			break
+		}
+
+		if ch := p.peekRune(); ch == '/' {
+			// Next segment is a regex so we're done.
+			break
+		} else if ch == '.' {
+			// Add an empty identifier.
+			idents = append(idents, "")
+			continue
+		}
+
+		// Parse the next identifier.
+		if ident, err = p.parseIdent(); err != nil {
+			return nil, err
+		}
+
+		idents = append(idents, ident)
+	}
+
+	if len(idents) > 3 {
+		msg := fmt.Sprintf("too many segments in %s", QuoteIdent(idents...))
+		return nil, &ParseError{Message: msg}
+	}
+
+	return idents, nil
+}
+
 // parserString parses a string.
 func (p *Parser) parseString() (string, error) {
 	tok, pos, lit := p.scanIgnoreWhitespace()
@@ -598,28 +640,27 @@ func (p *Parser) parseTarget(tr targetRequirement) (*Target, error) {
 		return nil, nil
 	}
 
-	// Parse identifier.  Could be policy or measurement name.
-	ident, err := p.parseIdent()
+	// db, rp, and / or measurement
+	idents, err := p.parseSegmentedIdents()
 	if err != nil {
 		return nil, err
 	}
 
-	target := &Target{}
-	target.Measurement = ident
+	t := &Target{Measurement: &Measurement{}}
 
-	// Parse optional ON.
-	if tok, _, _ := p.scanIgnoreWhitespace(); tok != ON {
-		p.unscan()
-		return target, nil
+	switch len(idents) {
+	case 1:
+		t.Measurement.Name = idents[0]
+	case 2:
+		t.Measurement.RetentionPolicy = idents[0]
+		t.Measurement.Name = idents[1]
+	case 3:
+		t.Measurement.Database = idents[0]
+		t.Measurement.RetentionPolicy = idents[1]
+		t.Measurement.Name = idents[2]
 	}
 
-	// Found an ON token so parse required identifier.
-	if ident, err = p.parseIdent(); err != nil {
-		return nil, err
-	}
-	target.Database = ident
-
-	return target, nil
+	return t, nil
 }
 
 // parseDeleteStatement parses a delete string and returns a DeleteStatement.
@@ -1301,8 +1342,59 @@ func (p *Parser) peekRune() rune {
 	return r
 }
 
-// parseSource parses a single source.
 func (p *Parser) parseSource() (Source, error) {
+	m := &Measurement{}
+
+	// Attempt to parse a regex.
+	re, err := p.parseRegex()
+	if err != nil {
+		return nil, err
+	} else if re != nil {
+		m.Regex = re
+		// Regex is always last so we're done.
+		return m, nil
+	}
+
+	// Didn't find a regex so parse segmented identifiers.
+	idents, err := p.parseSegmentedIdents()
+	if err != nil {
+		return nil, err
+	}
+
+	// If we already have the max allowed idents, we're done.
+	if len(idents) == 3 {
+		m.Database, m.RetentionPolicy, m.Name = idents[0], idents[1], idents[2]
+		return m, nil
+	}
+	// Check again for regex.
+	re, err = p.parseRegex()
+	if err != nil {
+		return nil, err
+	} else if re != nil {
+		m.Regex = re
+	}
+
+	// Assign identifiers to their proper locations.
+	switch len(idents) {
+	case 1:
+		if re != nil {
+			m.RetentionPolicy = idents[0]
+		} else {
+			m.Name = idents[0]
+		}
+	case 2:
+		if re != nil {
+			m.Database, m.RetentionPolicy = idents[0], idents[1]
+		} else {
+			m.RetentionPolicy, m.Name = idents[0], idents[1]
+		}
+	}
+
+	return m, nil
+}
+
+// parseSource parses a single source.
+func (p *Parser) parseSourceOld() (Source, error) {
 	m := &Measurement{}
 
 	for {
@@ -1318,7 +1410,10 @@ func (p *Parser) parseSource() (Source, error) {
 			if err != nil {
 				return nil, err
 			}
-			m.Regex = re.(*RegexLiteral)
+			m.Regex = re
+
+			// If we previously scanned db and/or rp segments, shift them.
+			m.Database, m.RetentionPolicy, m.Name = m.RetentionPolicy, m.Name, ""
 
 			// A regex is always the last part of the source so return. E.g.,
 			// db.rp./cpu.*/.  Regex not supported in database or retention
@@ -1328,7 +1423,22 @@ func (p *Parser) parseSource() (Source, error) {
 
 		// Next character wasn't a '/' so parse a non-regex identifier.
 		if tok, pos, lit := p.scanIgnoreWhitespace(); tok == IDENT {
-			m.Name = lit
+			fmt.Printf("lit = %#v\n", lit)
+			segments, err := SplitIdent(lit)
+			fmt.Printf("segments = %s\n", segments)
+			if err != nil {
+				return nil, &ParseError{Message: err.Error(), Pos: pos}
+			}
+			switch len(segments) {
+			case 1:
+				m.Name = segments[0]
+			case 2:
+				m.RetentionPolicy, m.Name = segments[0], segments[1]
+			case 3:
+				m.Database, m.RetentionPolicy, m.Name = segments[0], segments[1], segments[2]
+				// We're done if we have 3 secments.
+				return m, nil
+			}
 		} else {
 			if m.Name == "" && m.Regex == nil {
 				return nil, newParseError(tokstr(tok, lit), []string{"identifier", "regex"}, pos)
@@ -1669,7 +1779,18 @@ func (p *Parser) parseUnaryExpr() (Expr, error) {
 }
 
 // parseRegex parses a regular expression.
-func (p *Parser) parseRegex() (Expr, error) {
+func (p *Parser) parseRegex() (*RegexLiteral, error) {
+	nextRune := p.peekRune()
+	if isWhitespace(nextRune) {
+		p.consumeWhitespace()
+	}
+
+	// If the next character is not a '/', then return nils.
+	nextRune = p.peekRune()
+	if nextRune != '/' {
+		return nil, nil
+	}
+
 	tok, pos, lit := p.s.ScanRegex()
 
 	if tok == BADESCAPE {
@@ -1840,7 +1961,7 @@ func QuoteString(s string) string {
 }
 
 // QuoteIdent returns a quoted identifier from multiple bare identifiers.
-func QuoteIdent(segments []string) string {
+func QuoteIdent(segments ...string) string {
 	r := strings.NewReplacer("\n", `\n`, `\`, `\\`, `"`, `\"`)
 
 	var buf bytes.Buffer

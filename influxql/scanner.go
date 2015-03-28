@@ -125,7 +125,7 @@ func (s *Scanner) scanWhitespace() (tok Token, pos Pos, lit string) {
 }
 
 // scanIdent a fully qualified identifier.
-func (s *Scanner) scanIdent() (tok Token, pos Pos, lit string) {
+func (s *Scanner) scanIdentOld() (tok Token, pos Pos, lit string) {
 	_, pos = s.r.read()
 	s.r.unread()
 
@@ -135,6 +135,18 @@ func (s *Scanner) scanIdent() (tok Token, pos Pos, lit string) {
 		if ch == eof {
 			break
 		} else if ch == '.' {
+			ch1, _ := s.r.read()
+			s.r.unread()
+			if ch1 == '/' {
+				// Starting a regex so we're done scanning text portion.
+
+				// If the last rune written to the ident was '.', then
+				b := buf.Bytes()
+				if b[len(b)-1] == '.' {
+					buf.WriteRune(ch)
+				}
+				break
+			}
 			buf.WriteRune(ch)
 		} else if ch == '"' {
 			if tok0, pos0, lit0 := s.scanString(); tok0 == BADSTRING || tok0 == BADESCAPE {
@@ -144,6 +156,39 @@ func (s *Scanner) scanIdent() (tok Token, pos Pos, lit string) {
 				_, _ = buf.WriteString(lit0)
 				_ = buf.WriteByte('"')
 			}
+		} else if isIdentChar(ch) {
+			s.r.unread()
+			buf.WriteString(ScanBareIdent(s.r))
+		} else {
+			s.r.unread()
+			break
+		}
+	}
+	lit = buf.String()
+
+	// If the literal matches a keyword then return that keyword.
+	if tok = Lookup(lit); tok != IDENT {
+		return tok, pos, ""
+	}
+
+	return IDENT, pos, lit
+}
+
+func (s *Scanner) scanIdent() (tok Token, pos Pos, lit string) {
+	// Save the starting position of the identifier.
+	_, pos = s.r.read()
+	s.r.unread()
+
+	var buf bytes.Buffer
+	for {
+		if ch, _ := s.r.read(); ch == eof {
+			break
+		} else if ch == '"' {
+			tok0, pos0, lit0 := s.scanString()
+			if tok0 == BADSTRING || tok0 == BADESCAPE {
+				return tok0, pos0, lit0
+			}
+			return IDENT, pos, lit0
 		} else if isIdentChar(ch) {
 			s.r.unread()
 			buf.WriteString(ScanBareIdent(s.r))
@@ -559,6 +604,12 @@ func SplitIdent(s string) (segments []string, err error) {
 			if len(segments) == 0 {
 				return nil, errInvalidIdentifier
 			}
+
+			// if _, _, err := r.ReadRune(); err == io.EOF {
+			// 	return segments, nil
+			// }
+			// r.UnreadRune()
+
 			// Otherwise append blank segment and continue.
 			segments = append(segments, "")
 			isBareIdent = false
@@ -596,6 +647,7 @@ func SplitIdent(s string) (segments []string, err error) {
 		if ch, _, err := r.ReadRune(); err != nil {
 			return segments, nil
 		} else if ch == '.' {
+			r.UnreadRune()
 			continue
 		} else {
 			return nil, errInvalidIdentifier
