@@ -19,6 +19,7 @@ import (
 
 	"code.google.com/p/go-uuid/uuid"
 	"github.com/bmizerany/pat"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/influxdb/influxdb"
 	"github.com/influxdb/influxdb/client"
 	"github.com/influxdb/influxdb/influxql"
@@ -120,6 +121,10 @@ func NewHandler(s *influxdb.Server, requireAuthentication bool, version string) 
 		route{
 			"dump", // export all points in the given db.
 			"GET", "/dump", true, true, h.serveDump,
+		},
+		route{
+			"run_mapper",
+			"POST", "/run_mapper", true, true, h.serveRunMapper,
 		},
 	)
 
@@ -667,6 +672,83 @@ func (h *Handler) serveProcessContinuousQueries(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (h *Handler) serveRunMapper(w http.ResponseWriter, r *http.Request) {
+	// we always return a 200, even if there's an error because we always include an error object
+	// that can be passed on
+	w.Header().Add("content-type", "application/json")
+	w.WriteHeader(200)
+
+	// Read in the mapper info from the request body
+	var m influxdb.RemoteMapper
+	b, _ := ioutil.ReadAll(r.Body)
+	fmt.Println("RunMapper", string(b))
+
+	if err := json.Unmarshal(b, &m); err != nil {
+		mapError(w, err)
+		return
+	}
+
+	// if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+	// 	mapError(w, err)
+	// 	return
+	// }
+
+	// create a local mapper and chunk out the reulsts to the other server
+	spew.Dump(m)
+	lm, err := h.server.StartLocalMapper(&m)
+	if err != nil {
+		mapError(w, err)
+		return
+	}
+	if err := lm.Open(); err != nil {
+		mapError(w, err)
+		return
+	}
+	defer lm.Close()
+	call, err := m.CallExpr()
+	if err != nil {
+		mapError(w, err)
+		return
+	}
+	if err := lm.Begin(call, m.TMin, m.Limit); err != nil {
+		mapError(w, err)
+		return
+	}
+
+	// write results to the client until the next interval is empty
+	for {
+		fmt.Println("start interval")
+		v, err := lm.NextInterval(m.TMax)
+		if err != nil {
+			mapError(w, err)
+			return
+		}
+		spew.Dump(v)
+
+		// see if we're done
+		if v == nil {
+			fmt.Println("DONE")
+			return
+		}
+
+		// marshal and write out
+		d, err := json.Marshal(&v)
+		if err != nil {
+			mapError(w, err)
+			return
+		}
+		fmt.Println("> ", string(d))
+		b, err := json.Marshal(&influxdb.MapResponse{Data: d})
+		if err != nil {
+			mapError(w, err)
+			return
+		}
+		fmt.Println("> ", string(b))
+		w.Write(b)
+		w.(http.Flusher).Flush()
+	}
+}
+
 type dataNodeJSON struct {
 	ID  uint64 `json:"id"`
 	URL string `json:"url"`
@@ -684,6 +766,12 @@ func isMeasurementNotFoundError(err error) bool {
 
 func isFieldNotFoundError(err error) bool {
 	return (strings.HasPrefix(err.Error(), "field not found"))
+}
+
+// mapError writes an error result after trying to start a mapper
+func mapError(w http.ResponseWriter, err error) {
+	b, _ := json.Marshal(&influxdb.MapResponse{Err: err.Error()})
+	w.Write(b)
 }
 
 // httpError writes an error to the client in a standard format.
