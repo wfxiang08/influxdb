@@ -1393,62 +1393,6 @@ func (p *Parser) parseSource() (Source, error) {
 	return m, nil
 }
 
-// parseSource parses a single source.
-func (p *Parser) parseSourceOld() (Source, error) {
-	m := &Measurement{}
-
-	for {
-		nextRune := p.peekRune()
-		if isWhitespace(nextRune) {
-			p.consumeWhitespace()
-		}
-
-		// If the next character is a '/', then parse a regex.
-		nextRune = p.peekRune()
-		if nextRune == '/' {
-			re, err := p.parseRegex()
-			if err != nil {
-				return nil, err
-			}
-			m.Regex = re
-
-			// If we previously scanned db and/or rp segments, shift them.
-			m.Database, m.RetentionPolicy, m.Name = m.RetentionPolicy, m.Name, ""
-
-			// A regex is always the last part of the source so return. E.g.,
-			// db.rp./cpu.*/.  Regex not supported in database or retention
-			// policy names.
-			return m, nil
-		}
-
-		// Next character wasn't a '/' so parse a non-regex identifier.
-		if tok, pos, lit := p.scanIgnoreWhitespace(); tok == IDENT {
-			fmt.Printf("lit = %#v\n", lit)
-			segments, err := SplitIdent(lit)
-			fmt.Printf("segments = %s\n", segments)
-			if err != nil {
-				return nil, &ParseError{Message: err.Error(), Pos: pos}
-			}
-			switch len(segments) {
-			case 1:
-				m.Name = segments[0]
-			case 2:
-				m.RetentionPolicy, m.Name = segments[0], segments[1]
-			case 3:
-				m.Database, m.RetentionPolicy, m.Name = segments[0], segments[1], segments[2]
-				// We're done if we have 3 secments.
-				return m, nil
-			}
-		} else {
-			if m.Name == "" && m.Regex == nil {
-				return nil, newParseError(tokstr(tok, lit), []string{"identifier", "regex"}, pos)
-			}
-			p.unscan()
-			return m, nil
-		}
-	}
-}
-
 // parseCondition parses the "WHERE" clause of the query, if it exists.
 func (p *Parser) parseCondition() (Expr, error) {
 	// Check if the WHERE token exists.
@@ -1730,6 +1674,14 @@ func (p *Parser) parseUnaryExpr() (Expr, error) {
 		// Otherwise parse as a variable reference.
 		if tok0, _, _ := p.scan(); tok0 == LPAREN {
 			return p.parseCall(lit)
+		} else if tok0 == DOT {
+			p.unscan()
+			p.unscan()
+			segments, err := p.parseSegmentedIdents()
+			if err != nil {
+				return nil, err
+			}
+			return &VarRef{Val: QuoteIdent(segments...)}, nil
 		}
 		p.unscan()
 		return &VarRef{Val: lit}, nil
@@ -1966,14 +1918,36 @@ func QuoteIdent(segments ...string) string {
 
 	var buf bytes.Buffer
 	for i, segment := range segments {
-		_ = buf.WriteByte('"')
+		needQuote := IdentNeedsQuotes(segment) ||
+			((i < len(segments)-1) && segment != "") // not last segment && not ""
+
+		if needQuote {
+			_ = buf.WriteByte('"')
+		}
+
 		_, _ = buf.WriteString(r.Replace(segment))
-		_ = buf.WriteByte('"')
+
+		if needQuote {
+			_ = buf.WriteByte('"')
+		}
+
 		if i < len(segments)-1 {
 			_ = buf.WriteByte('.')
 		}
 	}
 	return buf.String()
+}
+
+// IdentNeedsQuotes returns true if the ident string given would require quotes.
+func IdentNeedsQuotes(ident string) bool {
+	for i, r := range ident {
+		if i == 0 && !isIdentFirstChar(r) {
+			return true
+		} else if i > 0 && !isIdentChar(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // split splits a string into a slice of runes.

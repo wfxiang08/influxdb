@@ -1148,10 +1148,13 @@ func TestQuoteIdent(t *testing.T) {
 		ident []string
 		s     string
 	}{
-		{[]string{``}, `""`},
-		{[]string{`foo`, `bar`}, `"foo"."bar"`},
-		{[]string{`foo bar`, `baz`}, `"foo bar"."baz"`},
-		{[]string{`foo.bar`, `baz`}, `"foo.bar"."baz"`},
+		{[]string{``}, ``},
+		{[]string{`foo`, `bar`}, `"foo".bar`},
+		{[]string{`foo`, ``, `bar`}, `"foo"..bar`},
+		{[]string{`foo bar`, `baz`}, `"foo bar".baz`},
+		{[]string{`foo.bar`, `baz`}, `"foo.bar".baz`},
+		{[]string{`foo.bar`, `rp`, `baz`}, `"foo.bar"."rp".baz`},
+		{[]string{`foo.bar`, `rp`, `1baz`}, `"foo.bar"."rp"."1baz"`},
 	} {
 		if s := influxql.QuoteIdent(tt.ident...); tt.s != s {
 			t.Errorf("%d. %s: mismatch: %s != %s", i, tt.ident, tt.s, s)

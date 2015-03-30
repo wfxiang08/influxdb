@@ -1703,17 +1703,23 @@ type Measurement struct {
 func (m *Measurement) String() string {
 	var buf bytes.Buffer
 	if m.Database != "" {
+		_, _ = buf.WriteString(`"`)
 		_, _ = buf.WriteString(m.Database)
-		_, _ = buf.WriteString(".")
+		_, _ = buf.WriteString(`".`)
 	}
 
-	if m.RetentionPolicy != "" || m.Database != "" {
+	if m.RetentionPolicy != "" {
+		_, _ = buf.WriteString(`"`)
 		_, _ = buf.WriteString(m.RetentionPolicy)
-		_, _ = buf.WriteString(".")
+		_, _ = buf.WriteString(`"`)
+	}
+
+	if m.Database != "" || m.RetentionPolicy != "" {
+		_, _ = buf.WriteString(`.`)
 	}
 
 	if m.Name != "" {
-		_, _ = buf.WriteString(m.Name)
+		_, _ = buf.WriteString(QuoteIdent(m.Name))
 	} else if m.Regex != nil {
 		_, _ = buf.WriteString(m.Regex.String())
 	}

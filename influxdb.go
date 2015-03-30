@@ -42,9 +42,6 @@ var (
 	// ErrDatabaseExists is returned when creating a duplicate database.
 	ErrDatabaseExists = errors.New("database exists")
 
-	// errDatabaseNotFound is returned when dropping a non-existent database.
-	errDatabaseNotFound = errors.New("database not found")
-
 	// ErrDatabaseRequired is returned when using a blank database name.
 	ErrDatabaseRequired = errors.New("database required")
 
@@ -101,9 +98,6 @@ var (
 	// ErrMeasurementNameRequired is returned when a point does not contain a name.
 	ErrMeasurementNameRequired = errors.New("measurement name required")
 
-	// errMeasurementNotFound is returned when a measurement does not exist.
-	errMeasurementNotFound = errors.New("measurement not found")
-
 	// ErrFieldsRequired is returned when a point does not any fields.
 	ErrFieldsRequired = errors.New("fields required")
 
@@ -140,9 +134,8 @@ func ErrMeasurementNotFound(name string) error { return Errorf("measurement not 
 
 func Errorf(format string, a ...interface{}) (err error) {
 	if _, file, line, ok := runtime.Caller(2); ok {
-		args := []interface{}{file, line}
-		args = append(args, a...)
-		err = fmt.Errorf("%s:%d: "+format, args...)
+		a = append(a, file, line)
+		err = fmt.Errorf(format+" (%s:%d)", a...)
 	} else {
 		err = fmt.Errorf(format, a...)
 	}

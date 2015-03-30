@@ -40,7 +40,7 @@ func (tx *tx) CreateMapReduceJobs(stmt *influxql.SelectStatement, tagKeys []stri
 		if !ok {
 			return nil, fmt.Errorf("invalid source type: %#v", src)
 		}
-		fmt.Printf("stmt.Sources.String() = %#v\n", stmt.Sources.String())
+
 		// Find database and retention policy.
 		db := tx.server.databases[mm.Database]
 		if db == nil {

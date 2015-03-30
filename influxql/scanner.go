@@ -124,56 +124,6 @@ func (s *Scanner) scanWhitespace() (tok Token, pos Pos, lit string) {
 	return WS, pos, buf.String()
 }
 
-// scanIdent a fully qualified identifier.
-func (s *Scanner) scanIdentOld() (tok Token, pos Pos, lit string) {
-	_, pos = s.r.read()
-	s.r.unread()
-
-	var buf bytes.Buffer
-	for {
-		ch, _ := s.r.read()
-		if ch == eof {
-			break
-		} else if ch == '.' {
-			ch1, _ := s.r.read()
-			s.r.unread()
-			if ch1 == '/' {
-				// Starting a regex so we're done scanning text portion.
-
-				// If the last rune written to the ident was '.', then
-				b := buf.Bytes()
-				if b[len(b)-1] == '.' {
-					buf.WriteRune(ch)
-				}
-				break
-			}
-			buf.WriteRune(ch)
-		} else if ch == '"' {
-			if tok0, pos0, lit0 := s.scanString(); tok0 == BADSTRING || tok0 == BADESCAPE {
-				return tok0, pos0, lit0
-			} else {
-				_ = buf.WriteByte('"')
-				_, _ = buf.WriteString(lit0)
-				_ = buf.WriteByte('"')
-			}
-		} else if isIdentChar(ch) {
-			s.r.unread()
-			buf.WriteString(ScanBareIdent(s.r))
-		} else {
-			s.r.unread()
-			break
-		}
-	}
-	lit = buf.String()
-
-	// If the literal matches a keyword then return that keyword.
-	if tok = Lookup(lit); tok != IDENT {
-		return tok, pos, ""
-	}
-
-	return IDENT, pos, lit
-}
-
 func (s *Scanner) scanIdent() (tok Token, pos Pos, lit string) {
 	// Save the starting position of the identifier.
 	_, pos = s.r.read()
@@ -341,8 +291,11 @@ func isLetter(ch rune) bool { return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && c
 // isDigit returns true if the rune is a digit.
 func isDigit(ch rune) bool { return (ch >= '0' && ch <= '9') }
 
-// isIdentChar returns true if the rune that be used in a bare identifier.
+// isIdentChar returns true if the rune can be used in an unquoted identifier.
 func isIdentChar(ch rune) bool { return isLetter(ch) || isDigit(ch) || ch == '_' }
+
+// isIdentFirstChar returns true if the rune can be used as the first char in an unquoted identifer.
+func isIdentFirstChar(ch rune) bool { return isLetter(ch) || ch == '_' }
 
 // bufScanner represents a wrapper for scanner to add a buffer.
 // It provides a fixed-length circular buffer that can be unread.
