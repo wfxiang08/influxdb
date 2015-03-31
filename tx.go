@@ -420,17 +420,6 @@ func matchesWhere(f influxql.Expr, fields map[string]interface{}) bool {
 	return true
 }
 
-// splitIdent splits an identifier into it's database, policy, and measurement parts.
-func splitIdent(s string) (db, rp, m string, err error) {
-	a, err := influxql.SplitIdent(s)
-	if err != nil {
-		return "", "", "", err
-	} else if len(a) != 3 {
-		return "", "", "", fmt.Errorf("invalid ident, expected 3 segments: %q", s)
-	}
-	return a[0], a[1], a[2], nil
-}
-
 type fieldDecoder interface {
 	DecodeByID(fieldID uint8, b []byte) (interface{}, error)
 	FieldByName(name string) *Field

@@ -217,8 +217,12 @@ func TestServer_SingleStatementQueryAuthorization(t *testing.T) {
 				Name:     "myquery",
 				Database: "foo",
 				Source: &influxql.SelectStatement{
-					Fields:  []*influxql.Field{{Expr: &influxql.Call{Name: "count"}}},
-					Target:  &influxql.Target{Measurement: "measure1", Database: "bar"},
+					Fields: []*influxql.Field{{Expr: &influxql.Call{Name: "count"}}},
+					Target: &influxql.Target{Measurement: &influxql.Measurement{
+						Database: "bar",
+						Name:     "measure1",
+					},
+					},
 					Sources: []influxql.Source{&influxql.Measurement{Name: "myseries"}},
 				},
 			},
@@ -285,7 +289,7 @@ func TestServer_MultiStatementQueryAuthorization(t *testing.T) {
 			&influxql.SelectStatement{
 				Fields:  []*influxql.Field{{Expr: &influxql.Call{Name: "count"}}},
 				Sources: []influxql.Source{&influxql.Measurement{Name: "cpu"}},
-				Target:  &influxql.Target{Measurement: "tmp"},
+				Target:  &influxql.Target{Measurement: &influxql.Measurement{Name: "tmp"}},
 			},
 		},
 	}

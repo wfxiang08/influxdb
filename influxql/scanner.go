@@ -558,11 +558,6 @@ func SplitIdent(s string) (segments []string, err error) {
 				return nil, errInvalidIdentifier
 			}
 
-			// if _, _, err := r.ReadRune(); err == io.EOF {
-			// 	return segments, nil
-			// }
-			// r.UnreadRune()
-
 			// Otherwise append blank segment and continue.
 			segments = append(segments, "")
 			isBareIdent = false
@@ -606,15 +601,6 @@ func SplitIdent(s string) (segments []string, err error) {
 			return nil, errInvalidIdentifier
 		}
 	}
-}
-
-// lastIdent returns the last identifier.
-func lastIdent(s string) string {
-	a, _ := SplitIdent(s)
-	if len(a) == 0 {
-		return ""
-	}
-	return a[len(a)-1]
 }
 
 var errInvalidIdentifier = errors.New("invalid identifier")
